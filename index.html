@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Santa's Cookie Catch</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#08294a;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}
+  #game{display:block;width:100vw;height:100dvh;touch-action:none}
+  #hud{position:fixed;top:10px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;color:#fff;font-weight:800;font-size:clamp(16px,4vw,22px);text-shadow:0 2px 4px #17324b;pointer-events:none}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:22px;background:#04182dbb;color:white;text-align:center}
+  .panel{max-width:420px;width:100%;padding:24px 20px;border:2px solid #fff8;border-radius:24px;background:linear-gradient(160deg,#bd2438,#7c1428);box-shadow:0 12px 35px #0019}
+  h1{font-size:clamp(28px,8vw,42px);line-height:1.05;margin:0 0 12px}
+  p{line-height:1.45;margin:10px 0}
+  button{border:0;border-radius:999px;padding:13px 22px;margin:7px 4px;font-size:17px;font-weight:800;background:#ffe28a;color:#542b17}
+  #hint{position:fixed;bottom:12px;left:0;right:0;text-align:center;color:white;font-size:13px;text-shadow:0 1px 3px #001;pointer-events:none}
+  .small{font-size:13px;opacity:.9}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud"><span id="score">🍪 0</span><span id="lives">❤️❤️❤️</span></div>
+<div id="hint">HOLD LEFT OR RIGHT SIDE TO MOVE SANTA</div>
+<div id="overlay">
+ <div class="panel">
+  <h1>🎅 Santa's<br>Cookie Catch! 🍪</h1>
+  <p>Catch the falling cookies in Santa's mouth!</p>
+  <p>Hold the <b>LEFT</b> or <b>RIGHT</b> side of the screen to steer him.</p>
+  <p class="small">Original jingly Christmas-style music and sound effects are included.</p>
+  <button id="start">PLAY CHRISTMAS GAME</button>
+  <button id="music">🔊 Music ON</button>
+ </div>
+</div>
+<script>
+(() => {
+ const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+ const scoreEl=document.getElementById('score'),livesEl=document.getElementById('lives');
+ const overlay=document.getElementById('overlay'),startBtn=document.getElementById('start'),musicBtn=document.getElementById('music');
+ let W=0,H=0,dpr=1,score=0,lives=3,running=false,held=0,last=0,spawn=0,cookies=[],flakes=[],musicOn=true;
+ let santaX=0,santaY=0,playerW=76,playerH=76,speed=390,audio=null,musicTimer=null,noteIndex=0;
+ const melody=[659,784,988,784,698,880,1047,880,659,784,988,1175,1047,988,784,659];
+ function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);santaY=H-115;if(!santaX)santaX=W/2;}
+ addEventListener('resize',resize);resize();
+ function tone(freq,duration=.16,type='sine',vol=.035){
+   if(!audio||!musicOn)return;
+   const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.value=freq;
+   g.gain.setValueAtTime(.0001,audio.currentTime);g.gain.exponentialRampToValueAtTime(vol,audio.currentTime+.015);
+   g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+duration);
+   o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration+.02);
+ }
+ function startMusic(){
+   if(!audio)audio=new (window.AudioContext||window.webkitAudioContext)();
+   if(audio.state==='suspended')audio.resume();
+   clearInterval(musicTimer);
+   musicTimer=setInterval(()=>{if(running&&musicOn){tone(melody[noteIndex%melody.length],.22,'sine',.025);if(noteIndex%4===0)tone(melody[noteIndex%melody.length]/2,.28,'triangle',.012);noteIndex++;}},260);
+ }
+ function catchSound(){tone(880,.09,'sine',.055);setTimeout(()=>tone(1175,.13,'sine',.04),75)}
+ function missSound(){tone(220,.22,'triangle',.045)}
+ function updateHud(){scoreEl.textContent='🍪 '+score;livesEl.textContent='❤️'.repeat(lives)+'🖤'.repeat(3-lives)}
+ function reset(){score=0;lives=3;cookies=[];santaX=W/2;spawn=0;updateHud();}
+ function start(){reset();overlay.style.display='none';running=true;last=performance.now();startMusic();requestAnimationFrame(loop);}
+ startBtn.addEventListener('click',start);
+ musicBtn.addEventListener('click',()=>{musicOn=!musicOn;musicBtn.textContent=musicOn?'🔊 Music ON':'🔇 Music OFF';if(musicOn&&running)startMusic();});
+ function steer(e){const x=(e.clientX ?? (e.touches && e.touches[0].clientX)) || W/2;held=x<W/2?-1:1;}
+ canvas.addEventListener('pointerdown',e=>{steer(e);canvas.setPointerCapture?.(e.pointerId);});
+ canvas.addEventListener('pointermove',e=>{if(e.buttons||e.pressure>0)steer(e);});
+ ['pointerup','pointercancel','pointerleave'].forEach(ev=>canvas.addEventListener(ev,()=>held=0));
+ function addCookie(){cookies.push({x:24+Math.random()*(W-48),y:-30,r:17,vy:190+Math.random()*65+Math.min(score*2,170),spin:Math.random()*6});}
+ function drawBackground(t){
+   const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#08294a');g.addColorStop(1,'#164c70');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+   // distant snowy hills
+   ctx.fillStyle='#e9f7ff';ctx.beginPath();ctx.moveTo(0,H-65);for(let x=0;x<=W+20;x+=20)ctx.lineTo(x,H-70+Math.sin(x*.018)*15);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+   // twinkling snow
+   if(flakes.length<85)flakes.push({x:Math.random()*W,y:-5,r:1+Math.random()*2.5,v:25+Math.random()*55});
+   ctx.fillStyle='#fff';flakes.forEach(f=>{f.y+=f.v/60;if(f.y>H){f.y=-5;f.x=Math.random()*W;}ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();});ctx.globalAlpha=1;
+   // candy-cane border decorations
+   ctx.font='28px sans-serif';ctx.fillText('🎄',8,62);ctx.fillText('🎄',W-42,62);
+ }
+ function drawSanta(){
+   // shadow
+   ctx.fillStyle='#15364b44';ctx.beginPath();ctx.ellipse(santaX,santaY+35,40,9,0,0,Math.PI*2);ctx.fill();
+   ctx.font='68px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🎅',santaX,santaY);
+ }
+ function drawCookie(c){
+   ctx.save();ctx.translate(c.x,c.y);ctx.rotate(c.spin);ctx.font='31px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🍪',0,0);ctx.restore();
+ }
+ function endGame(){
+   running=false;held=0;clearInterval(musicTimer);
+   overlay.style.display='flex';
+   overlay.querySelector('h1').innerHTML='🎄 Game Over! 🎄';
+   overlay.querySelector('p').innerHTML='Santa caught <b>'+score+'</b> cookies! Can you beat your score?';
+   overlay.querySelectorAll('p')[1].textContent='Hold the LEFT or RIGHT side of the screen to steer him.';
+   startBtn.textContent='PLAY AGAIN';
+ }
+ function loop(now){
+   if(!running)return;
+   const dt=Math.min((now-last)/1000,.035);last=now;
+   drawBackground(now);
+   santaX+=held*speed*dt;santaX=Math.max(42,Math.min(W-42,santaX));
+   spawn-=dt;if(spawn<=0){addCookie();spawn=Math.max(.34,1.0-score*.008);}
+   for(let i=cookies.length-1;i>=0;i--){
+     const c=cookies[i];c.y+=c.vy*dt;c.spin+=dt*2.2;drawCookie(c);
+     if(Math.abs(c.x-santaX)<43&&Math.abs(c.y-santaY)<43){
+       cookies.splice(i,1);score++;updateHud();catchSound();continue;
+     }
+     if(c.y>H-35){cookies.splice(i,1);lives--;updateHud();missSound();if(lives<=0){endGame();return;}}
+   }
+   drawSanta();
+   requestAnimationFrame(loop);
+ }
+ // Initial static scene
+ drawBackground(0);drawSanta();
+})();
+</script>
+</body>
+</html>
